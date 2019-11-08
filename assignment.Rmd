@@ -1,0 +1,279 @@
+---
+title: "Incomplete Data Analysis - Assignment - Nov 2019"
+author: "Lorenzo Mella (UUN: s1566023)"
+output: rmarkdown::github_document
+geometry: margin = 3cm
+---
+
+<br/>
+
+# Problem 1
+
+We can emphasise the distinction between the observed and unobserved variables in the vector of observations $Y$ as $Y_{\text{\ensuremath{\mathrm{obs}}}}$
+and $Y_{\mathrm{mis}}$, respectively. Hence, our probabilistic model of missingness takes the form 
+
+$$
+\mathbb{P}(R_{i}=1\mid Y_{\mathrm{obs}},Y_{\mathrm{mis}},Z)=\frac{e^{Z_{i}}}{1+e^{Z_{i}}},\qquad1\le i\le n.
+$$
+
+If the data are defined as simply $Y$, the variables $Z_{i}$ act as parameters of the model (to be arguably estimated, since they are unknown). In particular, we see that the missingness of elements within the vector $Y$ doesn't depend on either $Y_{\mathrm{obs}}$ and $Y_{\mathrm{mis}}$. More formally,
+
+$$
+\mathbb{P}(R_{i}=1\mid Y_{\mathrm{obs}},Y_{\mathrm{mis}},Z)=\mathbb{P}(R_{i}=1\mid Z).\label{eq:question 1 -- 2}
+$$
+
+The situation in which the distribution of the vector $R$ doesn't depend on the data ($Y$ in this case) is MCAR, by definition.
+
+If, on the other hand, the complete set of variables $(Y,Z)$ is taken as data, we may define $Y_{\mathrm{obs}}$ as above, and use the notation $M=(Y_{\mathrm{mis}},Z)$ for the whole set of missing and latent variables---for completeness, we should expand $R$ to include values for the missingness of the $Z$ variables too.
+
+In this case, while the formulae above are still valid, their interpretation differs: since the $Z_{i}$ are now considered as missing variables, the distribution of the $R_{i}$ (at least those originally given, referring to $Y$) clearly depends on them. This situation is a particular case of MNAR.
+
+Despite not knowing much about the nature of the problem, we consider the MCAR interpretation more natural, because the the vector $Z$, considered as latent, is independent of the variables $Y$. If $Y$ depended on $Z$ in a non-trivial way, then, the latter could be considered as a hidden model of explanatory causes of the distribution of $Y$. But due to independence, it is more easily interpreted as a set of parameters for the distribution of an external process that causes missingness.
+
+<br/>
+
+# Problem 2
+
+```{r}
+## Preliminary configuration
+library(tidyverse)
+
+printf = function(frmt, ...) cat(sprintf(frmt, ...))
+
+load("~/rprojects/ida/databp.Rdata")
+
+# Explicit conversion (to avoid nested variables)
+bp_tb = tibble(logdose = databp$logdose,
+               bloodp = databp$bloodp,
+               recovtime = databp$recovtime,
+               R = databp$R)
+```
+
+## (a) Complete Case Analysis
+
+In this section we perform our basic analysis of the dataset, following a Complete Case Analysis strategy. We ignore, in other words, entries that present missing values on `recovtime` (patients' recovery time, the only variable with missing values in the dataset).
+
+```{r}
+# Mean recovery time and std error of the mean
+
+num_complete = sum(!is.na(bp_tb$recovtime))
+                    
+cca_stats = bp_tb %>% summarize(num_complete = num_complete,
+                                mean_rec_time = mean(recovtime, na.rm = TRUE),
+                                mean_std_rec_time = sd(recovtime, na.rm = TRUE) / sqrt(num_complete))
+
+print(cca_stats)
+```
+
+We also compute the two Pearson-correlation coefficients for the recovery time and the log-dose, on one hand, and the recovery time and blood pressure, on the other.
+
+```{r}
+# Pearson correlations
+cca_cors = bp_tb %>%
+  summarize(dose_rectime_cor = cor(logdose, recovtime, use = "complete.obs"),
+            bloodp_rectime_cor = cor(bloodp, recovtime, use = "complete.obs"))
+
+print(cca_cors)
+
+# Elementary way
+cor(bp_tb$logdose[bp_tb$R == 1], bp_tb$recovtime[bp_tb$R == 1], method = "pearson")
+cor(bp_tb$bloodp[bp_tb$R == 1], bp_tb$recovtime[bp_tb$R == 1], method = "pearson")
+```
+
+## (b) Mean Imputation
+
+We repeat the analysis using one of the simplest single-imputation methods. In mean imputation we fill in all missing values of `recovtime` with the average of the available ones. 
+
+```{r}
+# Create a new tibble with the imputed data
+mi_bp_tb = bp_tb %>%
+  # Replace the NA recovtime entries with their mean value
+  # (taken from the CCA results in point (a))
+  mutate_at(.vars = "recovtime",
+            .funs = function(x) ifelse(is.na(x), cca_stats$mean_rec_time, x)) %>%
+  # The indicator doesn't make sense in the new table
+  select(-R) 
+```
+We compute the mean of `recovtime` on the new table (this time over 25 values) and its associated standard error.
+
+```{r}
+# Mean recovery time and std error of the mean
+mi_stats = mi_bp_tb %>%
+  summarize(mean_rec_time = mean(recovtime),
+            mean_std_rec_time = sd(recovtime) / sqrt(sum(!is.na(recovtime))),
+            total_observed = sum(!is.na(recovtime)))
+
+print(mi_stats)
+```
+
+We present the correlation results (`logdose` vs `recovtime` and `bloodp` vs `recovtime`) below.
+
+```{r}
+# Compute and print Pearson correlations
+mi_cors = mi_bp_tb %>%
+  summarize(dose_rectime_cor = cor(logdose, recovtime, method = "pearson"),
+            bloodp_rectime_cor = cor(bloodp, recovtime, method = "pearson"))
+
+print(mi_cors)
+
+# Elementary way (to double-check)
+cor(mi_bp_tb$logdose, mi_bp_tb$recovtime, method = "pearson")
+cor(mi_bp_tb$bloodp, mi_bp_tb$recovtime, method = "pearson")
+```
+
+## (c) Mean Regression Imputation
+
+The Mean Regression Imputation method fits a linear regression model with the `recovtime` variable as target (in general, the vector of variables with missing values), using the complete variables as regressors. The missing values are, then, imputed using the values predicted by the linear model at the respective entry.
+
+```{r}
+# Perform linear regression
+regression_data = lm(formula = recovtime ~ logdose + bloodp, data = bp_tb)
+# Print formatted summary
+summary(regression_data)
+
+# Impute values as predictions using the linear model
+# (all entries are predicted, for alignment purposes,
+# but only a few of them will be actually used for imputation)
+linreg_pred_recovtime = bp_tb %>%
+  predict(regression_data, newdata = .)
+
+linreg_bp_tb = bp_tb %>%
+  # Add column (temporarily) with predicted data to the tibble
+  add_column(pred_rec_time = linreg_pred_recovtime) %>%
+  # Replace NA entries in recovtime with the predicted values
+  mutate(recovtime = ifelse(R == 1, recovtime, pred_rec_time)) %>%
+  # Remove the temporary column and the indicator
+  select(-pred_rec_time, -R)
+```
+
+We compute again mean and mean standard error.
+
+```{r}
+# Mean recovery time and std error of the mean
+linreg_stats = linreg_bp_tb %>% summarize(mean_rec_time = mean(recovtime),
+                                  mean_std_rec_time = sd(recovtime) / sqrt(sum(!is.na(recovtime))),
+                                  total_observed = sum(!is.na(recovtime)))
+
+print(linreg_stats)
+```
+
+TBD
+
+```{r}
+# Pearson correlations
+linreg_cors = linreg_bp_tb %>% summarize(dose_rectime_cor = cor(logdose, recovtime, method = "pearson"),
+                                 bloodp_rectime_cor = cor(bloodp, recovtime, method = "pearson"))
+
+print(linreg_cors)
+
+# Elementary way
+cor(linreg_bp_tb$logdose, linreg_bp_tb$recovtime, method = "pearson")
+cor(linreg_bp_tb$bloodp, linreg_bp_tb$recovtime, method = "pearson")
+```
+
+## (d) Stochastic Regression Imputation
+
+As we have seen in the results above, Mean Regression Imputation has the flaw of imputing values that all lie on the same hyperplane. This has an impact in that it increases the correlation with the predictors in a way that doesn't represent the theoretical correlations of the phenomenon generating the data.
+A simple solution to this issue consists in "adding some jitter" to the predictions, simulating the variability of the training data.
+
+If the linear-model hypothesis is roughly correct and the distribution of the residuals is Gaussian, we can add Gaussian noise to the predictions to mitigate the increased correlations seen at the previous point. To imitate the variability in the original data, we take the standard deviation of the residuals as the corresponding parameter for the added noise.
+
+```{r}
+# Regression data inherited from point (c)
+linreg_residual_sd = summary(regression_data)$sigma
+
+# Impute values as in (c) but adding Gaussian noise
+sri_pred_recovtime = linreg_pred_recovtime +
+  rnorm(nrow(bp_tb), mean = 0, sd = linreg_residual_sd)
+
+sri_bp_tb = bp_tb %>%
+  add_column(pred_rec_time = sri_pred_recovtime) %>%
+  mutate(recovtime = ifelse(R == 1, recovtime, pred_rec_time)) %>%
+  select(-pred_rec_time, -R)
+```
+
+TBD
+
+```{r}
+# Mean recovery time and std error of the mean
+sri_stats = sri_bp_tb %>% summarize(mean_rec_time = mean(recovtime),
+                                  mean_std_rec_time = sd(recovtime) / sqrt(sum(!is.na(recovtime))),
+                                  total_observed = sum(!is.na(recovtime)))
+
+print(sri_stats)
+```
+
+TBD
+
+```{r}
+# Pearson correlations
+sri_cors = sri_bp_tb %>% summarize(dose_rectime_cor = cor(logdose, recovtime, method = "pearson"),
+                                 bloodp_rectime_cor = cor(bloodp, recovtime, method = "pearson"))
+
+print(sri_cors)
+
+# Elementary way
+cor(sri_bp_tb$logdose, sri_bp_tb$recovtime, method = "pearson")
+cor(sri_bp_tb$bloodp, sri_bp_tb$recovtime, method = "pearson")
+```
+
+As mentioned above, Stochastic Regression Imputation yields sensible results only if it is reasonable to assume a homoscedastic Gaussian residual distribution around the regression "line". We perform two graphical tests of goodness of fit to verify this assumption.
+
+The first is a plot of the studentised residuals against the regression values. If no pattern is discernible, the hypothesis of independence of the residuals should hold.
+
+```{r}
+# Linear plot of studentized residuals
+sri_studentized_res = rstudent(regression_data)
+plot(regression_data$fitted.values, sri_studentized_res,
+     xlab = "Fitted values (LR)", ylab = "Studentised Residuals")
+```
+
+Except for an outlier, the residuals don't present noticeable patterns.
+
+To test for Gaussianity, we compare the ordered residuals (standardised, this time) against the theoretical quantiles of a $\mathcal{N}(0,1)$ distribution (i.e., a QQ-plot). 
+
+```{r}
+# QQ-Plot of studentized residuals (against the theoretical Student's t distribution)
+sri_standardized_res = rstandard(regression_data)
+sri_standardized_res_no_outliers = sri_standardized_res[sri_standardized_res < 2]
+                                            
+qqnorm(sri_standardized_res_no_outliers)
+qqline(sri_standardized_res, col = 2)
+```
+
+## (e) Predictive Mean Matching
+
+```{r}
+# We start from the values obtained at point (c)
+linreg_pred_recovtime
+
+pmm_bp_tb = bp_tb %>%
+  add_column(pred_rec_time = pmm_pred_recovtime) %>%
+  mutate(recovtime = ifelse(R == 1, recovtime, pred_rec_time)) %>%
+  select(-pred_rec_time, -R)
+```
+
+TBD
+
+```{r}
+# Mean recovery time and std error of the mean
+pmm_stats = pmm_bp_tb %>% summarize(mean_rec_time = mean(recovtime),
+                                  mean_std_rec_time = sd(recovtime) / sqrt(sum(!is.na(recovtime))),
+                                  total_observed = sum(!is.na(recovtime)))
+
+print(pmm_stats)
+```
+
+TBD
+
+```{r}
+# Pearson correlations
+pmm_cors = pmm_bp_tb %>% summarize(dose_rectime_cor = cor(logdose, recovtime, method = "pearson"),
+                                 bloodp_rectime_cor = cor(bloodp, recovtime, method = "pearson"))
+
+print(pmm_cors)
+
+# Elementary way
+cor(pmm_bp_tb$logdose, pmm_bp_tb$recovtime, method = "pearson")
+cor(pmm_bp_tb$bloodp, pmm_bp_tb$recovtime, method = "pearson")
+```
