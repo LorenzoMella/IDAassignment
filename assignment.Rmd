@@ -2,7 +2,6 @@
 title: "Incomplete Data Analysis - Assignment - Nov 2019"
 author: "Lorenzo Mella (UUN: s1566023)"
 output: rmarkdown::github_document
-geometry: margin = 3cm
 ---
 
 <br/>
@@ -19,7 +18,7 @@ $$
 If the data are defined as simply $Y$, the variables $Z_{i}$ act as parameters of the model (to be arguably estimated, since they are unknown). In particular, we see that the missingness of elements within the vector $Y$ doesn't depend on either $Y_{\mathrm{obs}}$ and $Y_{\mathrm{mis}}$. More formally,
 
 $$
-\mathbb{P}(R_{i}=1\mid Y_{\mathrm{obs}},Y_{\mathrm{mis}},Z)=\mathbb{P}(R_{i}=1\mid Z).\label{eq:question 1 -- 2}
+\mathbb{P}(R_{i}=1\mid Y_{\mathrm{obs}},Y_{\mathrm{mis}},Z)=\mathbb{P}(R_{i}=1\mid Z).
 $$
 
 The situation in which the distribution of the vector $R$ doesn't depend on the data ($Y$ in this case) is MCAR, by definition.
@@ -34,33 +33,45 @@ Despite not knowing much about the nature of the problem, we consider the MCAR i
 
 # Problem 2
 
+We present the solution on the use of single-imputation methods applied to the `databp` dataset.
+
+We will be using `tidyverse` to simplify most of the points.
+
 ```{r}
 ## Preliminary configuration
 library(tidyverse)
 
-printf = function(frmt, ...) cat(sprintf(frmt, ...))
-
 load("~/rprojects/ida/databp.Rdata")
 
-# Explicit conversion (to avoid nested variables)
+# Build the tibble explicitly
+# (to avoid a problem of nested variables)
 bp_tb = tibble(logdose = databp$logdose,
                bloodp = databp$bloodp,
                recovtime = databp$recovtime,
                R = databp$R)
 ```
 
-## (a) Complete Case Analysis
+The tibble has the required (original) format. We present first few lines:
 
-In this section we perform our basic analysis of the dataset, following a Complete Case Analysis strategy. We ignore, in other words, entries that present missing values on `recovtime` (patients' recovery time, the only variable with missing values in the dataset).
+```{r}
+print(bp_tb)
+```
+
+### (a) Complete Case Analysis
+
+In this section we analyse the dataset following a Complete Case Analysis strategy. We ignore, in other words, entries that present missing values on `recovtime` (patients' recovery time, the only variable with missing values in the dataset).
+
+We first compute the mean of the complete `recovtime` entries and the mean standard error.
 
 ```{r}
 # Mean recovery time and std error of the mean
 
 num_complete = sum(!is.na(bp_tb$recovtime))
                     
-cca_stats = bp_tb %>% summarize(num_complete = num_complete,
-                                mean_rec_time = mean(recovtime, na.rm = TRUE),
-                                mean_std_rec_time = sd(recovtime, na.rm = TRUE) / sqrt(num_complete))
+cca_stats = bp_tb %>%
+  summarize(num_complete = num_complete,
+            mean_rec_time = mean(recovtime, na.rm = TRUE),
+            mean_std_rec_time = sd(recovtime, na.rm = TRUE) / sqrt(num_complete))
 
 print(cca_stats)
 ```
@@ -80,9 +91,9 @@ cor(bp_tb$logdose[bp_tb$R == 1], bp_tb$recovtime[bp_tb$R == 1], method = "pearso
 cor(bp_tb$bloodp[bp_tb$R == 1], bp_tb$recovtime[bp_tb$R == 1], method = "pearson")
 ```
 
-## (b) Mean Imputation
+### (b) Mean Imputation
 
-We repeat the analysis using one of the simplest single-imputation methods. In mean imputation we fill in all missing values of `recovtime` with the average of the available ones. 
+We repeat the analysis using mean imputation. We fill in all missing values of `recovtime` with the average of the available ones. We retrieve the mean from the statistics computed in point (a).  
 
 ```{r}
 # Create a new tibble with the imputed data
@@ -92,21 +103,22 @@ mi_bp_tb = bp_tb %>%
   mutate_at(.vars = "recovtime",
             .funs = function(x) ifelse(is.na(x), cca_stats$mean_rec_time, x)) %>%
   # The indicator doesn't make sense in the new table
-  select(-R) 
+  select(-R)
 ```
 We compute the mean of `recovtime` on the new table (this time over 25 values) and its associated standard error.
 
 ```{r}
 # Mean recovery time and std error of the mean
+num_entries = nrow(mi_bp_tb)
+
 mi_stats = mi_bp_tb %>%
   summarize(mean_rec_time = mean(recovtime),
-            mean_std_rec_time = sd(recovtime) / sqrt(sum(!is.na(recovtime))),
-            total_observed = sum(!is.na(recovtime)))
+            mean_std_rec_time = sd(recovtime) / sqrt(num_entries))
 
 print(mi_stats)
 ```
 
-We present the correlation results (`logdose` vs `recovtime` and `bloodp` vs `recovtime`) below.
+We recompute the correlations (`logdose` vs `recovtime` and `bloodp` vs `recovtime`) in mean imputation case.
 
 ```{r}
 # Compute and print Pearson correlations
@@ -121,9 +133,9 @@ cor(mi_bp_tb$logdose, mi_bp_tb$recovtime, method = "pearson")
 cor(mi_bp_tb$bloodp, mi_bp_tb$recovtime, method = "pearson")
 ```
 
-## (c) Mean Regression Imputation
+### (c) Mean Regression Imputation
 
-The Mean Regression Imputation method fits a linear regression model with the `recovtime` variable as target (in general, the vector of variables with missing values), using the complete variables as regressors. The missing values are, then, imputed using the values predicted by the linear model at the respective entry.
+The Mean Regression Imputation method fits a linear regression model with the `recovtime` variable as target and using the complete variables as regressors. The missing values are, then, imputed using the values predicted by the linear model at the respective entry.
 
 ```{r}
 # Perform linear regression
@@ -150,19 +162,20 @@ We compute again mean and mean standard error.
 
 ```{r}
 # Mean recovery time and std error of the mean
-linreg_stats = linreg_bp_tb %>% summarize(mean_rec_time = mean(recovtime),
-                                  mean_std_rec_time = sd(recovtime) / sqrt(sum(!is.na(recovtime))),
-                                  total_observed = sum(!is.na(recovtime)))
+linreg_stats = linreg_bp_tb %>%
+  summarize(mean_rec_time = mean(recovtime),
+            mean_std_rec_time = sd(recovtime) / sqrt(nrow(.)))
 
 print(linreg_stats)
 ```
 
-TBD
+The Pearson-correlation coefficients are as follows.
 
 ```{r}
 # Pearson correlations
-linreg_cors = linreg_bp_tb %>% summarize(dose_rectime_cor = cor(logdose, recovtime, method = "pearson"),
-                                 bloodp_rectime_cor = cor(bloodp, recovtime, method = "pearson"))
+linreg_cors = linreg_bp_tb %>%
+  summarize(dose_rectime_cor = cor(logdose, recovtime, method = "pearson"),
+            bloodp_rectime_cor = cor(bloodp, recovtime, method = "pearson"))
 
 print(linreg_cors)
 
@@ -171,9 +184,9 @@ cor(linreg_bp_tb$logdose, linreg_bp_tb$recovtime, method = "pearson")
 cor(linreg_bp_tb$bloodp, linreg_bp_tb$recovtime, method = "pearson")
 ```
 
-## (d) Stochastic Regression Imputation
+### (d) Stochastic Regression Imputation
 
-As we have seen in the results above, Mean Regression Imputation has the flaw of imputing values that all lie on the same hyperplane. This has an impact in that it increases the correlation with the predictors in a way that doesn't represent the theoretical correlations of the phenomenon generating the data.
+Mean Regression Imputation has the flaw of imputing values that all lie on the same hyperplane. This has an impact in that it increases the correlation with the predictors in a way that doesn't represent the theoretical correlations of the phenomenon generating the data.
 A simple solution to this issue consists in "adding some jitter" to the predictions, simulating the variability of the training data.
 
 If the linear-model hypothesis is roughly correct and the distribution of the residuals is Gaussian, we can add Gaussian noise to the predictions to mitigate the increased correlations seen at the previous point. To imitate the variability in the original data, we take the standard deviation of the residuals as the corresponding parameter for the added noise.
@@ -192,23 +205,24 @@ sri_bp_tb = bp_tb %>%
   select(-pred_rec_time, -R)
 ```
 
-TBD
+We now recompute the mean and mean standard error.
 
 ```{r}
 # Mean recovery time and std error of the mean
-sri_stats = sri_bp_tb %>% summarize(mean_rec_time = mean(recovtime),
-                                  mean_std_rec_time = sd(recovtime) / sqrt(sum(!is.na(recovtime))),
-                                  total_observed = sum(!is.na(recovtime)))
+sri_stats = sri_bp_tb %>%
+  summarize(mean_rec_time = mean(recovtime),
+            mean_std_rec_time = sd(recovtime) / sqrt(sum(num_entries)))
 
 print(sri_stats)
 ```
 
-TBD
+We verify that the correlations have increased.
 
 ```{r}
 # Pearson correlations
-sri_cors = sri_bp_tb %>% summarize(dose_rectime_cor = cor(logdose, recovtime, method = "pearson"),
-                                 bloodp_rectime_cor = cor(bloodp, recovtime, method = "pearson"))
+sri_cors = sri_bp_tb %>%
+  summarize(dose_rectime_cor = cor(logdose, recovtime, method = "pearson"),
+            bloodp_rectime_cor = cor(bloodp, recovtime, method = "pearson"))
 
 print(sri_cors)
 
@@ -241,39 +255,72 @@ qqnorm(sri_standardized_res_no_outliers)
 qqline(sri_standardized_res, col = 2)
 ```
 
-## (e) Predictive Mean Matching
+### (e) Predictive Mean Matching
+
+Predictive Mean Matching may be described as a hot-deck imputation method with the smallest possible stratification of the data (i.e., single entries). 
 
 ```{r}
-# We start from the values obtained at point (c)
-linreg_pred_recovtime
+# Retrieve the missing-value indices 
+missing_idx = which(is.na(bp_tb$recovtime))
 
+# Initialise the vector of indices of the replacement entries
+min_dist_idx = numeric(sum(is.na(bp_tb$recovtime)))
+
+# Add the column of LR predicted values (from point (c)) to the table
 pmm_bp_tb = bp_tb %>%
-  add_column(pred_rec_time = pmm_pred_recovtime) %>%
-  mutate(recovtime = ifelse(R == 1, recovtime, pred_rec_time)) %>%
-  select(-pred_rec_time, -R)
+  mutate(n = 1:n()) %>%
+  add_column(pred_rec_time = linreg_pred_recovtime)
+
+# Simple utility function
+sq_dist = function(a, b) {
+  (a - b)^2
+}
+
+# Compute the index of the minimum squared distance
+# of predictions between the (available) recovtime entries
+# and the missing ones
+for (i in 1:length(missing_idx)) {
+  min_dist_idx[i] = pmm_bp_tb %>%
+    mutate(sq_dists = sqdist(pred_rec_time, linreg_pred_recovtime[missing_idx[i]])) %>%
+    filter(R == 1) %>%
+    slice(which.min(sq_dists)) %>%
+    pull(n)
+}
+
+# Impute the values at the min-distance indices
+pmm_bp_tb$recovtime[missing_idx] = pmm_bp_tb$recovtime[min_dist_idx]
+
+# Clean the table from unnecessary columns
+pmm_bp_tb %>% select(-pred_rec_time, -R)
 ```
 
-TBD
+Having imputed the values of the best matching entries to the missing values of `recovtime`, we compute mean and mean standard error one more time.
 
 ```{r}
 # Mean recovery time and std error of the mean
-pmm_stats = pmm_bp_tb %>% summarize(mean_rec_time = mean(recovtime),
-                                  mean_std_rec_time = sd(recovtime) / sqrt(sum(!is.na(recovtime))),
-                                  total_observed = sum(!is.na(recovtime)))
+pmm_stats = pmm_bp_tb %>%
+  summarize(mean_rec_time = mean(recovtime),
+            mean_std_rec_time = sd(recovtime) / sqrt(nrow(.)))
 
 print(pmm_stats)
 ```
 
-TBD
+The Pearson-correlations are computed below.
 
 ```{r}
 # Pearson correlations
-pmm_cors = pmm_bp_tb %>% summarize(dose_rectime_cor = cor(logdose, recovtime, method = "pearson"),
-                                 bloodp_rectime_cor = cor(bloodp, recovtime, method = "pearson"))
+pmm_cors = pmm_bp_tb %>%
+  summarize(dose_rectime_cor = cor(logdose, recovtime),
+            bloodp_rectime_cor = cor(bloodp, recovtime))
 
 print(pmm_cors)
-
-# Elementary way
-cor(pmm_bp_tb$logdose, pmm_bp_tb$recovtime, method = "pearson")
-cor(pmm_bp_tb$bloodp, pmm_bp_tb$recovtime, method = "pearson")
 ```
+
+### (f) Advantages and disadvantages of Predictive Mean Matching
+
+We will briefly mention why Predictive Mean Matching is an improvement compared to the regression imputation methods. The latter make use of the assumption that close values in the values of the complete variables (`logdose` and `bloodp`, in our case) correspond to close values on the target (`recovtime`). This is how we generate the missing target value. PMM doesn't impute linearly predicted values, but takes the values from among the complete cases. Doing this, the range of the values is preserved, especially for entries whose predictors are less representative (have more extreme values).
+
+In the case of Predictive Mean Matching, the main advantage is the use of the values of the original data, which is particularly critical in the case in which the variable with missing values is categorical (not the case in our analysis).
+Differently from hot-deck imputation (of which PMM can be considered as an extreme case) quantisation of the values isn't necessary.
+
+A downside of the method consists in the loss of an interpolation effect. Imputed entries with close predictors will tend to have the same closest neighbour among the available data, yielding greater correlations. This is particularly evident for entries with extreme predictors (outlier entries **x**, where **x** is the vector of the complete variables), which, will all have the same value.
