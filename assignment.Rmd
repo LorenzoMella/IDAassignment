@@ -4,7 +4,10 @@ author: "Lorenzo Mella (UUN: s1566023)"
 output: pdf_document
 ---
 
-<br/>
+
+The `rmarkdown` source file that generated the present document is available at:
+
+https://github.com/LorenzoMella/IDAassignment.git
 
 # Problem 1
 
