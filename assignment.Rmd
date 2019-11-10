@@ -1,33 +1,30 @@
 ---
 title: "Incomplete Data Analysis - Assignment - Nov 2019"
 author: "Lorenzo Mella (UUN: s1566023)"
-output: rmarkdown::github_document
+output: pdf_document
 ---
 
 <br/>
 
 # Problem 1
 
-We can emphasise the distinction between the observed and unobserved variables in the vector of observations $Y$ as $Y_{\text{\ensuremath{\mathrm{obs}}}}$
-and $Y_{\mathrm{mis}}$, respectively. Hence, our probabilistic model of missingness takes the form 
+We may emphasise the distinction between the observed and unobserved variables in the vector of observations $Y$ as $Y_{\mathrm{obs}}$ and $Y_{\mathrm{mis}}$, respectively. Hence, our probabilistic model of missingness takes the form 
 
 $$
 \mathbb{P}(R_{i}=1\mid Y_{\mathrm{obs}},Y_{\mathrm{mis}},Z)=\frac{e^{Z_{i}}}{1+e^{Z_{i}}},\qquad1\le i\le n.
 $$
 
-If the data are defined as simply $Y$, the variables $Z_{i}$ act as parameters of the model (to be arguably estimated, since they are unknown). In particular, we see that the missingness of elements within the vector $Y$ doesn't depend on either $Y_{\mathrm{obs}}$ and $Y_{\mathrm{mis}}$. More formally,
+The distribution of the missingness indicator $R$ only depends on the knowledge of the variables $Z_{i}$, not on $Y_{\mathrm{obs}}$ or $Y_{\mathrm{mis}}$. Therefore, the following identity holds:
 
 $$
 \mathbb{P}(R_{i}=1\mid Y_{\mathrm{obs}},Y_{\mathrm{mis}},Z)=\mathbb{P}(R_{i}=1\mid Z).
 $$
 
-The situation in which the distribution of the vector $R$ doesn't depend on the data ($Y$ in this case) is MCAR, by definition.
+If the data are defined as simply $Y$, the model of missingness is independent of the data. By definition, we are in an MCAR scenario. 
 
-If, on the other hand, the complete set of variables $(Y,Z)$ is taken as data, we may define $Y_{\mathrm{obs}}$ as above, and use the notation $M=(Y_{\mathrm{mis}},Z)$ for the whole set of missing and latent variables---for completeness, we should expand $R$ to include values for the missingness of the $Z$ variables too.
+If, on the other hand, we take as data the complete set of variables $(Y,Z)$, we may define $X_{\mathrm{obs}} = Y_{\mathrm{obs}}$ as above, and use the notation $X_{\mathrm{mis}}=(Y_{\mathrm{mis}},Z)$ for the whole set of missing and latent variables---for completeness, we should augment the vector $R$ to include values for the missingness of the $Z$ variables too (all zeros). In this case, while the formulae for the distribution of R shown above are still valid, their interpretation differs: since the $Z_{i}$ are now considered as missing variables, the distribution of the $R_{i}$ (at least those originally given, referring to $Y$) clearly depends on them. This situation is a special case of MNAR.
 
-In this case, while the formulae above are still valid, their interpretation differs: since the $Z_{i}$ are now considered as missing variables, the distribution of the $R_{i}$ (at least those originally given, referring to $Y$) clearly depends on them. This situation is a particular case of MNAR.
-
-Despite not knowing much about the nature of the problem, we consider the MCAR interpretation more natural, because the the vector $Z$, considered as latent, is independent of the variables $Y$. If $Y$ depended on $Z$ in a non-trivial way, then, the latter could be considered as a hidden model of explanatory causes of the distribution of $Y$. But due to independence, it is more easily interpreted as a set of parameters for the distribution of an external process that causes missingness.
+Despite not knowing much about the nature of the problem, it appears that the variables $Z$ (their values being unknown) play the role of latent variables added to the model. If $Y$ had depended on $Z$ in a non-trivial way, then, the latter could have been considered as a hidden model of explanatory causes of the distribution of $Y$ and $R$. But, due to the independence of $Z$ and $Y$, restricting the attention to $Y$ as data, thus having an MCAR model of missingness, seems more natural: the $Z$ may be seen as parameters of the model of $R$ (to be arguably estimated). Or, since their number appears not to be fixed but matched to the dimension of the sample, each of the values $Z_i$ may be modelling an unrelated process of the loss of the value of $Y_i$.
 
 <br/>
 
@@ -41,8 +38,14 @@ We will be using `tidyverse` to simplify most of the points.
 ## Preliminary configuration
 library(tidyverse)
 
-load("~/rprojects/ida/databp.Rdata")
+options(pillar.sigfig = 6, pillar.neg = FALSE)
 
+load("~/rprojects/ida/databp.Rdata")
+```
+
+\pagebreak
+
+```{r}
 # Build the tibble explicitly
 # (to avoid a problem of nested variables)
 bp_tb = tibble(logdose = databp$logdose,
@@ -50,6 +53,7 @@ bp_tb = tibble(logdose = databp$logdose,
                recovtime = databp$recovtime,
                R = databp$R)
 ```
+<br/>
 
 The tibble has the required (original) format. We present first few lines:
 
@@ -59,13 +63,12 @@ print(bp_tb)
 
 ### (a) Complete Case Analysis
 
-In this section we analyse the dataset following a Complete Case Analysis strategy. We ignore, in other words, entries that present missing values on `recovtime` (patients' recovery time, the only variable with missing values in the dataset).
+In this section we analyse the dataset following a Complete Case Analysis strategy. We ignore, in other words, entries that present missing values on `recovtime` (patients' systolic blood pressure recovery time, the only variable with missing values in the dataset).
 
 We first compute the mean of the complete `recovtime` entries and the mean standard error.
 
 ```{r}
-# Mean recovery time and std error of the mean
-
+# The number of complete entries
 num_complete = sum(!is.na(bp_tb$recovtime))
                     
 cca_stats = bp_tb %>%
@@ -76,7 +79,7 @@ cca_stats = bp_tb %>%
 print(cca_stats)
 ```
 
-We also compute the two Pearson-correlation coefficients for the recovery time and the log-dose, on one hand, and the recovery time and blood pressure, on the other.
+We also compute the two Pearson-correlation coefficients for the recovery time and the log-dose, and the recovery time and blood pressure, respectively.
 
 ```{r}
 # Pearson correlations
@@ -85,31 +88,27 @@ cca_cors = bp_tb %>%
             bloodp_rectime_cor = cor(bloodp, recovtime, use = "complete.obs"))
 
 print(cca_cors)
-
-# Elementary way
-cor(bp_tb$logdose[bp_tb$R == 1], bp_tb$recovtime[bp_tb$R == 1], method = "pearson")
-cor(bp_tb$bloodp[bp_tb$R == 1], bp_tb$recovtime[bp_tb$R == 1], method = "pearson")
 ```
 
 ### (b) Mean Imputation
 
-We repeat the analysis using mean imputation. We fill in all missing values of `recovtime` with the average of the available ones. We retrieve the mean from the statistics computed in point (a).  
+We repeat the analysis using mean imputation. We fill in all missing values of `recovtime` with the average of the available ones. We retrieve the mean from the statistics computed in point (a).
 
 ```{r}
 # Create a new tibble with the imputed data
 mi_bp_tb = bp_tb %>%
   # Replace the NA recovtime entries with their mean value
-  # (taken from the CCA results in point (a))
   mutate_at(.vars = "recovtime",
             .funs = function(x) ifelse(is.na(x), cca_stats$mean_rec_time, x)) %>%
-  # The indicator doesn't make sense in the new table
+  # We remove the now useless missingness indicator from the new table
   select(-R)
 ```
 We compute the mean of `recovtime` on the new table (this time over 25 values) and its associated standard error.
 
 ```{r}
-# Mean recovery time and std error of the mean
-num_entries = nrow(mi_bp_tb)
+# The number samples (complete or not),
+# used here and in the following points
+num_entries = nrow(bp_tb)
 
 mi_stats = mi_bp_tb %>%
   summarize(mean_rec_time = mean(recovtime),
@@ -118,24 +117,21 @@ mi_stats = mi_bp_tb %>%
 print(mi_stats)
 ```
 
-We recompute the correlations (`logdose` vs `recovtime` and `bloodp` vs `recovtime`) in mean imputation case.
+We recompute the correlations (`logdose` vs `recovtime` and `bloodp` vs `recovtime`) in the mean imputation case.
 
 ```{r}
 # Compute and print Pearson correlations
 mi_cors = mi_bp_tb %>%
-  summarize(dose_rectime_cor = cor(logdose, recovtime, method = "pearson"),
-            bloodp_rectime_cor = cor(bloodp, recovtime, method = "pearson"))
+  summarize(dose_rectime_cor = cor(logdose, recovtime),
+            bloodp_rectime_cor = cor(bloodp, recovtime))
 
 print(mi_cors)
-
-# Elementary way (to double-check)
-cor(mi_bp_tb$logdose, mi_bp_tb$recovtime, method = "pearson")
-cor(mi_bp_tb$bloodp, mi_bp_tb$recovtime, method = "pearson")
 ```
+\pagebreak
 
 ### (c) Mean Regression Imputation
 
-The Mean Regression Imputation method fits a linear regression model with the `recovtime` variable as target and using the complete variables as regressors. The missing values are, then, imputed using the values predicted by the linear model at the respective entry.
+The Mean Regression Imputation method fits a linear regression model with the `recovtime` variable as target, using the values of the complete variables as regressors. The missing values are, then, imputed using the values predicted by the linear model at the respective entry.
 
 ```{r}
 # Perform linear regression
@@ -143,9 +139,10 @@ regression_data = lm(formula = recovtime ~ logdose + bloodp, data = bp_tb)
 # Print formatted summary
 summary(regression_data)
 
+
 # Impute values as predictions using the linear model
-# (all entries are predicted, for alignment purposes,
-# but only a few of them will be actually used for imputation)
+# (all entries are predicted, for use point (e),
+# but only a few of them will be used here)
 linreg_pred_recovtime = bp_tb %>%
   predict(regression_data, newdata = .)
 
@@ -178,18 +175,13 @@ linreg_cors = linreg_bp_tb %>%
             bloodp_rectime_cor = cor(bloodp, recovtime, method = "pearson"))
 
 print(linreg_cors)
-
-# Elementary way
-cor(linreg_bp_tb$logdose, linreg_bp_tb$recovtime, method = "pearson")
-cor(linreg_bp_tb$bloodp, linreg_bp_tb$recovtime, method = "pearson")
 ```
 
 ### (d) Stochastic Regression Imputation
 
-Mean Regression Imputation has the flaw of imputing values that all lie on the same hyperplane. This has an impact in that it increases the correlation with the predictors in a way that doesn't represent the theoretical correlations of the phenomenon generating the data.
-A simple solution to this issue consists in "adding some jitter" to the predictions, simulating the variability of the training data.
+Mean Regression Imputation has the flaw of imputing values that all lie on the same hyperplane. A simple solution to this issue consists in "adding some jitter" to the predictions, simulating the variability of the training data.
 
-If the linear-model hypothesis is roughly correct and the distribution of the residuals is Gaussian, we can add Gaussian noise to the predictions to mitigate the increased correlations seen at the previous point. To imitate the variability in the original data, we take the standard deviation of the residuals as the corresponding parameter for the added noise.
+If the linear-model hypothesis is roughly correct and the distribution of the residuals is Gaussian, we can add Gaussian noise to the predictions to mitigate the added bias in the correlations seen in the previous method. To imitate the variability in the original data, we take the standard deviation of the residuals as the corresponding parameter for the added noise.
 
 ```{r}
 # Regression data inherited from point (c)
@@ -197,7 +189,7 @@ linreg_residual_sd = summary(regression_data)$sigma
 
 # Impute values as in (c) but adding Gaussian noise
 sri_pred_recovtime = linreg_pred_recovtime +
-  rnorm(nrow(bp_tb), mean = 0, sd = linreg_residual_sd)
+  rnorm(num_entries, mean = 0, sd = linreg_residual_sd)
 
 sri_bp_tb = bp_tb %>%
   add_column(pred_rec_time = sri_pred_recovtime) %>%
@@ -225,39 +217,45 @@ sri_cors = sri_bp_tb %>%
             bloodp_rectime_cor = cor(bloodp, recovtime, method = "pearson"))
 
 print(sri_cors)
-
-# Elementary way
-cor(sri_bp_tb$logdose, sri_bp_tb$recovtime, method = "pearson")
-cor(sri_bp_tb$bloodp, sri_bp_tb$recovtime, method = "pearson")
 ```
 
-As mentioned above, Stochastic Regression Imputation yields sensible results only if it is reasonable to assume a homoscedastic Gaussian residual distribution around the regression "line". We perform two graphical tests of goodness of fit to verify this assumption.
+As mentioned above, Stochastic Regression Imputation yields sensible results only if it is reasonable to assume a homoscedastic Gaussian residual distribution around the regression hyperplane. We perform two graphical tests of goodness of fit to verify this assumption.
 
 The first is a plot of the studentised residuals against the regression values. If no pattern is discernible, the hypothesis of independence of the residuals should hold.
 
 ```{r}
 # Linear plot of studentized residuals
-sri_studentized_res = rstudent(regression_data)
+sri_studentized_res = rstandard(regression_data)
 plot(regression_data$fitted.values, sri_studentized_res,
+     main = "Studentised residuals",
+     xlab = "Fitted values (LR)", ylab = "Studentised Residuals")
+```
+\pagebreak
+
+Except for an outlier, the residuals don't present noticeable patterns, especially when we remove the former, as in the graph below.
+
+```{r}
+res_no_outlier = sri_studentized_res < 2
+plot(regression_data$fitted.values[res_no_outlier], sri_studentized_res[res_no_outlier],
+     main = "Studentised residuals (outlier removed)",
      xlab = "Fitted values (LR)", ylab = "Studentised Residuals")
 ```
 
-Except for an outlier, the residuals don't present noticeable patterns.
+\pagebreak
 
-To test for Gaussianity, we compare the ordered residuals (standardised, this time) against the theoretical quantiles of a $\mathcal{N}(0,1)$ distribution (i.e., a QQ-plot). 
+To test for Gaussianity, we compare the ordered residuals (standardised, this time) against the theoretical quantiles of a $\mathcal{N}(0,1)$ distribution (i.e., a QQ-plot). We removed again the single outlier for clarity.
 
 ```{r}
-# QQ-Plot of studentized residuals (against the theoretical Student's t distribution)
-sri_standardized_res = rstandard(regression_data)
-sri_standardized_res_no_outliers = sri_standardized_res[sri_standardized_res < 2]
-                                            
-qqnorm(sri_standardized_res_no_outliers)
-qqline(sri_standardized_res, col = 2)
+# QQ-Plot of standardized residuals (against the theoretical Student's t distribution)
+qqnorm(sri_studentized_res[res_no_outlier])
+qqline(sri_studentized_res, col = 2)
 ```
 
 ### (e) Predictive Mean Matching
 
-Predictive Mean Matching may be described as a hot-deck imputation method with the smallest possible stratification of the data (i.e., single entries). 
+Predictive Mean Matching may be described as a hot-deck imputation method with the densest possible stratification of the data (i.e., single entries).
+
+The predicted values of all entries (computed in point (c)) will be used to find the nearest neighbour to the missing entries. The real value at the nearest neighbour will be imputed to the respective missing variable.
 
 ```{r}
 # Retrieve the missing-value indices 
@@ -272,7 +270,7 @@ pmm_bp_tb = bp_tb %>%
   add_column(pred_rec_time = linreg_pred_recovtime)
 
 # Simple utility function
-sq_dist = function(a, b) {
+sqdist = function(a, b) {
   (a - b)^2
 }
 
@@ -281,8 +279,12 @@ sq_dist = function(a, b) {
 # and the missing ones
 for (i in 1:length(missing_idx)) {
   min_dist_idx[i] = pmm_bp_tb %>%
+    # Add a column with the squared distances
+    # of the LR predicted values from the missing one
     mutate(sq_dists = sqdist(pred_rec_time, linreg_pred_recovtime[missing_idx[i]])) %>%
+    # Eliminate the missing entries (we match with complete entries)
     filter(R == 1) %>%
+    # Extract the index of the entry to match (minimum square distance criterion)
     slice(which.min(sq_dists)) %>%
     pull(n)
 }
@@ -291,36 +293,33 @@ for (i in 1:length(missing_idx)) {
 pmm_bp_tb$recovtime[missing_idx] = pmm_bp_tb$recovtime[min_dist_idx]
 
 # Clean the table from unnecessary columns
-pmm_bp_tb %>% select(-pred_rec_time, -R)
+pmm_bp_tb = pmm_bp_tb %>% select(-pred_rec_time, -R)
 ```
 
-Having imputed the values of the best matching entries to the missing values of `recovtime`, we compute mean and mean standard error one more time.
+Having imputed the values of the best matching entries to the missing values of `recovtime`, we compute mean and mean standard error and the Pearson correlations one more time.
 
 ```{r}
 # Mean recovery time and std error of the mean
 pmm_stats = pmm_bp_tb %>%
   summarize(mean_rec_time = mean(recovtime),
-            mean_std_rec_time = sd(recovtime) / sqrt(nrow(.)))
+            mean_std_rec_time = sd(recovtime) / sqrt(num_entries))
 
 print(pmm_stats)
-```
 
-The Pearson-correlations are computed below.
-
-```{r}
 # Pearson correlations
 pmm_cors = pmm_bp_tb %>%
   summarize(dose_rectime_cor = cor(logdose, recovtime),
             bloodp_rectime_cor = cor(bloodp, recovtime))
 
-print(pmm_cors)
+(pmm_cors)
 ```
+
+\pagebreak
 
 ### (f) Advantages and disadvantages of Predictive Mean Matching
 
-We will briefly mention why Predictive Mean Matching is an improvement compared to the regression imputation methods. The latter make use of the assumption that close values in the values of the complete variables (`logdose` and `bloodp`, in our case) correspond to close values on the target (`recovtime`). This is how we generate the missing target value. PMM doesn't impute linearly predicted values, but takes the values from among the complete cases. Doing this, the range of the values is preserved, especially for entries whose predictors are less representative (have more extreme values).
+Predictive Mean Matching is an improvement compared to Stochastic Regression Imputation: the latter makes use of the assumption that close values among the regressors (the complete variables, `logdose` and `bloodp`, in our case) correspond to close values of the predicted variable (`recovtime`). This is how we generate the missing target values. PMM doesn't impute linearly predicted values, but takes the values from among the complete cases. Doing this, the range of the values is preserved, especially for entries whose predictors have more extreme values (hence, the uncertainty on the LR predicted values is greater). We argue that, choosing from among the available values, less bias might be introduced in the dataset.
 
-In the case of Predictive Mean Matching, the main advantage is the use of the values of the original data, which is particularly critical in the case in which the variable with missing values is categorical (not the case in our analysis).
-Differently from hot-deck imputation (of which PMM can be considered as an extreme case) quantisation of the values isn't necessary.
+Choosing imputed values among the available data is also critical in the case when the variable with missing values is categorical (not the case in our analysis). If the categories are represented through an integer code, regression would yield real values, from which there might not be an obvious method to derive the discrete label. 
 
-A downside of the method consists in the loss of an interpolation effect. Imputed entries with close predictors will tend to have the same closest neighbour among the available data, yielding greater correlations. This is particularly evident for entries with extreme predictors (outlier entries **x**, where **x** is the vector of the complete variables), which, will all have the same value.
+As a downside, imputed entries with close predictors will tend to have the same closest neighbour among the available data, introducing greater bias in the empirical correlations. Still referring to our scalar missing-variable case, this is particularly evident for entries whose predicted target value is beyond the maximum (or minimum) of the predicted values of the complete data. The former will all be imputed the same value.
